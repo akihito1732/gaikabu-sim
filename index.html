@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>外国株式 損益シミュレーター</title>
+<meta name="description" content="為替×株価の損益を3Dで可視化する外国株シミュレーター">
+<meta name="theme-color" content="#11142a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="外国株sim">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#eef0fb; --muted:#8d93b8; --faint:#5a6090; --edge:#323a5e;
+    --yen:#f2b04a; --usd:#46d6d0; --gain:#5fdc9b; --loss:#f47171; --neutral:#9aa0c8;
+    /* テーマ依存（既定=ライト） */
+    --pg:#e9edf6; --tink:#1f2440; --tmut:#5b6488; --tg:#1f9e62;
+    --nav-bg:rgba(255,255,255,.55); --nav-ink:#5b6488; --nav-bd:rgba(0,0,0,.06);
+    --topfade:rgba(233,237,246,.95); --topfade0:rgba(233,237,246,0);
+  }
+  html[data-theme="dark"]{
+    --pg:#11142a; --tink:#eef0fb; --tmut:#8d93b8; --tg:#5fdc9b;
+    --nav-bg:rgba(20,24,42,.7); --nav-ink:#8d93b8; --nav-bd:rgba(255,255,255,.08);
+    --topfade:rgba(17,20,42,.95); --topfade0:rgba(17,20,42,0);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:"Zen Kaku Gothic New",system-ui,sans-serif;color:var(--ink);background:var(--pg);overflow:hidden;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;touch-action:none}
+
+  .topbar{position:fixed;top:0;left:0;right:0;padding:13px 18px 26px;background:linear-gradient(180deg,var(--topfade),var(--topfade0));pointer-events:none;z-index:5}
+  .eyebrow{font-size:11px;letter-spacing:.3em;color:var(--tmut);font-weight:700;text-transform:uppercase}
+  .topbar h1{font-size:clamp(15px,3.6vw,20px);font-weight:900;margin-top:4px;color:var(--tink)}
+  .topbar h1 .g{color:var(--tg)}
+  .legend{display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--tmut)}
+  .legend i{display:inline-block;width:14px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+  .legend .l-th i{border-top-style:dashed;border-color:currentColor;color:var(--tink)}
+  .legend .l-re i{border-top:0;width:11px;height:11px;border-radius:3px;background:linear-gradient(135deg,#2fae6a,#e24d4d);border:none}
+
+  .readbar{position:fixed;top:12px;right:12px;z-index:6;background:rgba(29,34,56,.88);backdrop-filter:blur(8px);border:1px solid var(--edge);border-radius:14px;padding:11px 13px;min-width:188px}
+  .readbar .row{display:flex;justify-content:space-between;gap:12px;font-size:12px;line-height:1.85}
+  .readbar .k{color:var(--muted)} .readbar .v{font-family:"Space Mono",monospace;font-weight:700;font-variant-numeric:tabular-nums}
+  .readbar .v.x{color:var(--yen)} .readbar .v.y{color:var(--usd)}
+  .readbar .cap{font-size:10.5px;color:var(--faint);text-align:right;margin:-3px 0 3px;font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums}
+  .readbar .big{margin-top:7px;padding-top:8px;border-top:1px solid var(--edge);display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .readbar .big .k{font-size:11px} .readbar .big .v{font-size:20px}
+  .readbar .sub{font-size:10.5px;color:var(--faint);margin-top:5px;line-height:1.5;font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums}
+  .up{color:var(--gain)} .down{color:var(--loss)} .flat{color:var(--neutral)}
+  .readbar.flash{animation:rbflash .8s ease}
+  @keyframes rbflash{0%{box-shadow:0 0 0 0 rgba(70,214,212,.0);border-color:var(--edge)}18%{box-shadow:0 0 0 4px rgba(70,214,212,.55);border-color:var(--usd)}100%{box-shadow:0 0 0 0 rgba(70,214,212,0);border-color:var(--edge)}}
+
+  /* hover tooltip */
+  .tip{position:fixed;z-index:8;pointer-events:none;display:none;background:rgba(20,24,42,.94);border:1px solid var(--edge);border-radius:10px;padding:8px 11px;font-size:11.5px;line-height:1.7;color:var(--ink);transform:translate(-50%,calc(-100% - 14px));white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .tip .tk{color:var(--muted)} .tip b{font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums}
+  .tip .tx{color:var(--yen)} .tip .ty{color:var(--usd)}
+
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:12px 12px 14px;background:linear-gradient(0deg,rgba(233,237,246,.96),rgba(233,237,246,.6) 72%,rgba(233,237,246,0))}
+  .dock .inner{max-width:580px;margin:0 auto;display:grid;gap:9px;max-height:64vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px}
+  .seclab{font-size:10px;letter-spacing:.18em;color:var(--muted);font-weight:700;margin:3px 2px -2px;text-transform:uppercase}
+  .ctrl{background:rgba(29,34,56,.9);border:1px solid var(--edge);border-radius:12px;padding:9px 13px}
+  .ctrl .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .ctrl .name{font-size:12.5px;font-weight:500;color:var(--ink)}
+  .ctrl .name .u{color:var(--muted);font-size:10px}
+  .roWrap{display:inline-flex;align-items:baseline;gap:1px}
+  .ro-in{font-family:"Space Mono",monospace;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;color:var(--ink);background:transparent;border:none;border-bottom:1px dashed rgba(255,255,255,.22);width:74px;text-align:right;padding:1px 2px;border-radius:3px}
+  .ro-in.x{color:var(--yen)} .ro-in.y{color:var(--usd)}
+  .ro-in:hover{border-bottom-color:rgba(255,255,255,.5)}
+  .ro-in:focus{outline:none;border-bottom-style:solid;border-bottom-color:var(--usd);background:rgba(255,255,255,.07)}
+  .ro-in::-webkit-outer-spin-button,.ro-in::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .ro-in[type=number]{-moz-appearance:textfield}
+  .suf{font-family:"Space Mono",monospace;font-weight:700;font-size:12.5px;color:var(--muted)}
+  .slcap{font-size:10.5px;color:var(--faint);margin-top:6px;font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums}
+  .slcap b{color:var(--ink)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:99px;background:#0e1120;outline:none;cursor:pointer;margin-top:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--yen);box-shadow:0 2px 7px rgba(0,0,0,.5)}
+  .ctrl.y input[type=range]::-webkit-slider-thumb{border-color:var(--usd)}
+  .ctrl.c input[type=range]::-webkit-slider-thumb{border-color:var(--muted)}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--yen)}
+  .ctrl.y input[type=range]::-moz-range-thumb{border-color:var(--usd)} .ctrl.c input[type=range]::-moz-range-thumb{border-color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .toolrow{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .toggle{display:flex;background:#0e1120;border:1px solid var(--edge);border-radius:10px;padding:3px;gap:3px;flex:1;min-width:190px}
+  .toggle button{flex:1;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--muted);background:none;border:none;padding:7px 4px;border-radius:7px;cursor:pointer}
+  .toggle button.on{background:var(--edge);color:var(--ink)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+  .chip{font-family:inherit;font-size:11.5px;font-weight:500;color:var(--ink);background:rgba(29,34,56,.9);border:1px solid var(--edge);padding:6px 11px;border-radius:99px;cursor:pointer}
+  .chip:hover{background:rgba(40,48,78,.95)} .chip.ghost{color:var(--muted)}
+  .savebtn{width:100%;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ink);background:rgba(40,48,78,.95);border:1px solid var(--edge);padding:9px;border-radius:10px;cursor:pointer;margin-bottom:8px}
+  .savebtn:hover{background:rgba(52,62,98,.98)}
+  /* 右下の四角ボタン → 右サイドバー */
+  .scenbtn{position:fixed;right:16px;bottom:16px;z-index:11;width:54px;height:54px;border-radius:15px;background:rgba(20,24,42,.94);backdrop-filter:blur(10px);border:1px solid var(--edge);color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  .scenbtn:hover{background:rgba(40,48,78,.97)}
+  .themebtn{position:fixed;right:16px;bottom:80px;z-index:11;width:54px;height:54px;border-radius:15px;background:rgba(20,24,42,.94);backdrop-filter:blur(10px);border:1px solid var(--edge);color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  .themebtn:hover{background:rgba(40,48,78,.97)}
+  .scenbtn .cnt{position:absolute;top:-7px;right:-7px;background:var(--usd);color:#08121f;font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;font-family:"Space Mono",monospace;min-width:18px;text-align:center}
+  .sboverlay{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.2);display:none}
+  .sboverlay.open{display:block}
+  .sidebar{position:fixed;top:0;right:0;bottom:0;z-index:10;width:330px;max-width:88vw;background:rgba(17,20,38,.98);backdrop-filter:blur(12px);border-left:1px solid var(--edge);transform:translateX(100%);transition:transform .28s ease;display:flex;flex-direction:column;padding:16px 16px 14px}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar .sbhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .sidebar .sbhead h3{font-size:15px;font-weight:900;color:var(--ink)}
+  .sidebar .sbclose{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+  .pinrow{display:flex;align-items:center;gap:8px;margin:2px 0 10px}
+  .pintgl{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:12px;color:var(--ink);user-select:none}
+  .pintgl .sw{width:38px;height:21px;border-radius:99px;background:#0e1120;border:1px solid var(--edge);position:relative;transition:background .2s}
+  .pintgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--muted);transition:.2s}
+  .pintgl.on .sw{background:rgba(70,214,212,.35);border-color:var(--usd)}
+  .pintgl.on .sw::after{left:19px;background:var(--usd)}
+  .sidebar .slist{flex:1;overflow-y:auto;margin-top:2px}
+  .slist{display:grid;gap:6px}
+  .sitem{display:flex;align-items:center;gap:8px;background:rgba(29,34,56,.9);border:1px solid var(--edge);border-radius:10px;padding:7px 10px}
+  .sitem .stxt{flex:1;font-size:11.5px;color:var(--ink);cursor:pointer;font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums;line-height:1.4}
+  .sitem .stxt small{color:var(--muted)}
+  .sitem .sdel{background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:0 2px;line-height:1}
+  .sitem .sdel:hover{color:var(--loss)}
+  .sptools{display:flex;gap:6px;margin:8px 0}
+  .ssearch{flex:1;min-width:0;font-family:inherit;font-size:11.5px;color:var(--ink);background:#0e1120;border:1px solid var(--edge);border-radius:8px;padding:6px 8px}
+  .ssearch::placeholder{color:var(--faint)}
+  .ssort{font-family:inherit;font-size:11px;color:var(--ink);background:#0e1120;border:1px solid var(--edge);border-radius:8px;padding:6px 4px}
+  .sitem{align-items:flex-start}
+  .sitem .sclr{width:20px;height:20px;border:1px solid var(--edge);border-radius:5px;padding:0;background:none;cursor:pointer;flex:none;margin-top:1px}
+  .sitem .smid{flex:1;min-width:0;display:grid;gap:3px}
+  .sname{width:100%;font-family:inherit;font-size:12px;font-weight:700;color:var(--ink);background:transparent;border:none;border-bottom:1px dashed rgba(255,255,255,.2);padding:1px 2px}
+  .sname:focus{outline:none;border-bottom-color:var(--usd);background:rgba(255,255,255,.06)}
+  .ssum{font-size:10px;color:var(--muted);font-family:"Space Mono",monospace;font-variant-numeric:tabular-nums;line-height:1.4;cursor:pointer}
+  .srecall{background:none;border:1px solid var(--edge);color:var(--ink);font-size:10.5px;border-radius:6px;padding:3px 7px;cursor:pointer;flex:none;margin-top:1px}
+  .srecall:hover{background:rgba(255,255,255,.08)}
+  .sbtns{display:flex;flex-direction:column;gap:4px;flex:none}
+  .sbtns .sfoc{border-color:rgba(70,214,212,.5);color:var(--usd)}
+  .svis{font-family:inherit;font-size:10px;background:none;border:1px solid var(--edge);color:var(--ink);border-radius:6px;padding:3px 6px;cursor:pointer;white-space:nowrap}
+  .svis:hover{background:rgba(255,255,255,.08)}
+  .svis.off{color:var(--faint);border-style:dashed;opacity:.8}
+  .sempty{font-size:11px;color:var(--faint);text-align:center;padding:8px 4px}
+  .sempty{font-size:11px;color:var(--faint);text-align:center;padding:4px}
+  .navhint{position:fixed;left:14px;bottom:14px;z-index:6;font-size:10.5px;color:var(--nav-ink);background:var(--nav-bg);border:1px solid var(--nav-bd);border-radius:8px;padding:5px 9px;display:none}
+  @media (max-height:600px){ .topbar h1,.legend{display:none} }
+  @media (min-width:860px){
+    .topbar{max-width:780px;padding-bottom:16px}
+    .dock{left:14px;right:auto;top:114px;bottom:46px;width:360px;padding:0;background:none}
+    .dock .inner{max-width:none;height:100%;max-height:none;overflow-y:auto;background:rgba(20,24,42,.9);backdrop-filter:blur(10px);border:1px solid var(--edge);border-radius:18px;padding:14px}
+    .readbar{min-width:212px}
+    .navhint{display:block}
+  }
+  /* ===== スマホ・タブレット縦向け ===== */
+  @media (max-width:760px){
+    .topbar{display:none}
+    /* 右上に小さめの操作ボタン（テーマ／シナリオ） */
+    .themebtn,.scenbtn{top:calc(env(safe-area-inset-top,0px) + 10px);bottom:auto;width:46px;height:46px;font-size:19px;border-radius:13px}
+    .scenbtn{right:calc(env(safe-area-inset-right,0px) + 12px)}
+    .themebtn{right:calc(env(safe-area-inset-right,0px) + 66px)}
+    /* 損益パネルは左上・折りたたみ可 */
+    .readbar{left:calc(env(safe-area-inset-left,0px) + 10px);right:auto;top:calc(env(safe-area-inset-top,0px) + 10px);min-width:0;width:auto;max-width:62vw;padding:9px 26px 9px 11px}
+    .readbar .rbtoggle{display:flex}
+    .readbar.mini .row,.readbar.mini .cap,.readbar.mini .sub{display:none}
+    .readbar.mini .big{margin-top:0;padding-top:0;border-top:none}
+    /* ドックはボトムシート */
+    .dock{padding:0 0 calc(env(safe-area-inset-bottom,0px) + 8px);background:none}
+    .dock .inner{max-width:none;margin:0;gap:10px;max-height:52vh;background:rgba(17,20,38,.97);backdrop-filter:blur(12px);border:1px solid var(--edge);border-top-left-radius:18px;border-top-right-radius:18px;padding:8px 14px 14px;box-shadow:0 -10px 30px rgba(0,0,0,.4)}
+    .dock .inner::before{content:"";display:block;width:40px;height:4px;border-radius:99px;background:var(--edge);margin:2px auto 6px}
+    .ctrl{padding:11px 14px}
+    input[type=range]{height:7px}
+    input[type=range]::-webkit-slider-thumb{width:24px;height:24px}
+    input[type=range]::-moz-range-thumb{width:24px;height:24px}
+    .ro-in{width:80px;font-size:16px}
+    /* サイドバー全幅寄り */
+    .sidebar{width:min(360px,92vw);padding-top:calc(env(safe-area-inset-top,0px) + 16px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+    .chip,.savebtn,.srecall,.svis{min-height:34px}
+    .navhint{display:none}
+  }
+  /* 損益パネルの開閉つまみ（既定は非表示、モバイルで表示） */
+  .readbar{position:fixed}
+  .readbar .rbtoggle{display:none;position:absolute;top:8px;right:8px;width:16px;height:16px;align-items:center;justify-content:center;color:var(--muted);font-size:11px;cursor:pointer;transition:transform .2s}
+  .readbar.mini .rbtoggle{transform:rotate(-90deg)}
+</style>
+<!-- ↑ style end -->
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="topbar">
+  <div class="eyebrow">理論 × 手取り 3D</div>
+  <h1>外国株式 損益シミュレーター</h1>
+  <div class="legend">
+    <span class="l-th"><i></i>理論（ワイヤー＝コストなし）</span>
+    <span class="l-re"><i></i>手取り（色つき＝税・手数料後）</span>
+  </div>
+</div>
+
+<div class="readbar" id="readbar">
+  <span class="rbtoggle" id="rbToggle">▾</span>
+  <div class="row"><span class="k">為替倍率</span><span class="v x" id="rx">1.00×</span></div>
+  <div class="cap" id="rxcap">150円 → 150円</div>
+  <div class="row"><span class="k">株価倍率</span><span class="v y" id="ry">2.00×</span></div>
+  <div class="cap" id="rycap">$100 → $200</div>
+  <div class="row"><span class="k">損益倍率</span><span class="v" id="rmult">2.00×</span></div>
+  <div class="big"><span class="k">合計手取り</span><span class="v" id="ryen">+0円</span></div>
+  <div class="row" style="margin-top:4px"><span class="k">理論損益</span><span class="v" id="rtheory" style="color:var(--neutral)">+0円</span></div>
+  <div class="sub" id="rsub"></div>
+</div>
+
+<div class="tip" id="tip"></div>
+<div class="navhint">ドラッグ＝回転 ／ 右ドラッグ・Shift＝平行移動 ／ ホイール＝カーソル方向へズーム ／ ホバー＝詳細</div>
+
+<div class="dock">
+  <div class="inner">
+    <div class="ctrl x">
+      <div class="top"><span class="name">為替倍率 <span class="u">売値÷買値の為替</span></span><span class="roWrap"><input class="ro-in x" id="sx-in" type="number" min="0.5" max="1.5" step="0.01" value="1.00"><span class="suf">×</span></span></div>
+      <input type="range" id="sx" min="0.5" max="1.5" step="0.01" value="1.0">
+      <div class="slcap" id="sxcap">売値の為替 <b>150円</b></div>
+    </div>
+    <div class="ctrl y">
+      <div class="top"><span class="name">株価倍率 <span class="u">売値÷買値の株価</span></span><span class="roWrap"><input class="ro-in y" id="sy-in" type="number" min="0.01" max="100" step="0.01" value="2.00"><span class="suf">×</span></span></div>
+      <input type="range" id="sy" min="0.01" max="100" step="0.01" value="2.0">
+      <div class="slcap" id="sycap">売値の株価 <b>$200</b></div>
+    </div>
+    <div class="seclab">買値・株数（円の損益に反映）</div>
+    <div class="grid2">
+      <div class="ctrl c">
+        <div class="top"><span class="name">買値の為替 <span class="u">円/$</span></span><span class="roWrap"><input class="ro-in" id="sbf-in" type="number" min="50" max="250" step="0.01" value="150.00"></span></div>
+        <input type="range" id="sbf" min="50" max="250" step="0.01" value="150">
+      </div>
+      <div class="ctrl c">
+        <div class="top"><span class="name">買値の株価 <span class="u">ドル</span></span><span class="roWrap"><input class="ro-in" id="sbp-in" type="number" min="0.5" max="1000" step="0.01" value="100.00"></span></div>
+        <input type="range" id="sbp" min="0.5" max="1000" step="0.01" value="100">
+      </div>
+    </div>
+    <div class="ctrl c">
+      <div class="top"><span class="name">株数</span><span class="roWrap"><input class="ro-in" id="sn-in" type="number" min="1" max="1000" step="1" value="100"><span class="suf">株</span></span></div>
+      <input type="range" id="sn" min="1" max="1000" step="1" value="100">
+    </div>
+    <div class="seclab">コスト・税</div>
+    <div class="grid2">
+      <div class="ctrl c">
+        <div class="top"><span class="name">売買手数料 <span class="u">片道%</span></span><span class="roWrap"><input class="ro-in" id="sc-in" type="number" min="0" max="1" step="0.01" value="0.45"><span class="suf">%</span></span></div>
+        <input type="range" id="sc" min="0" max="1" step="0.05" value="0.45">
+      </div>
+      <div class="ctrl c">
+        <div class="top"><span class="name">両替スプレッド <span class="u">円/$</span></span><span class="roWrap"><input class="ro-in" id="ss-in" type="number" min="0" max="1" step="0.01" value="0.25"></span></div>
+        <input type="range" id="ss" min="0" max="1" step="0.01" value="0.25">
+      </div>
+    </div>
+    <div class="toolrow">
+      <div class="toggle" id="tax">
+        <button data-v="1" class="on">課税口座 20.315%</button>
+        <button data-v="0">NISA 非課税</button>
+      </div>
+    </div>
+    <div class="seclab">配当（売買とは別に上乗せ）</div>
+    <div class="grid2">
+      <div class="ctrl c">
+        <div class="top"><span class="name">配当利回り <span class="u">年%</span></span><span class="roWrap"><input class="ro-in" id="sdy-in" type="number" min="0" max="10" step="0.1" value="2.0"><span class="suf">%</span></span></div>
+        <input type="range" id="sdy" min="0" max="10" step="0.1" value="2">
+      </div>
+      <div class="ctrl c">
+        <div class="top"><span class="name">保有年数</span><span class="roWrap"><input class="ro-in" id="sdyr-in" type="number" min="0" max="10" step="1" value="1"><span class="suf">年</span></span></div>
+        <input type="range" id="sdyr" min="0" max="10" step="1" value="1">
+      </div>
+    </div>
+    <div class="ctrl c">
+      <div class="top"><span class="name">配当課税率 <span class="u">米10%＋日本ぶん</span></span><span class="roWrap"><input class="ro-in" id="sdt-in" type="number" min="0" max="35" step="0.1" value="28.3"><span class="suf">%</span></span></div>
+      <input type="range" id="sdt" min="0" max="35" step="0.1" value="28.3">
+    </div>
+    <div class="chips">
+      <button class="chip" data-p="1.2,2">円安＋株2倍</button>
+      <button class="chip" data-p="0.85,2">円高＋株2倍</button>
+      <button class="chip" data-p="1.0,10">株10倍</button>
+      <button class="chip" data-p="1.0,100">株100倍</button>
+      <button class="chip" data-p="1,1">無変動</button>
+      <button class="chip ghost" data-p="0.9,0.5">株半減</button>
+    </div>
+  </div>
+</div>
+
+<button class="themebtn" id="themeBtn" title="ライト / ダーク切替">☀</button>
+<button class="scenbtn" id="scenBtn" title="シナリオ"><span>🗂</span><span class="cnt" id="spCount">0</span></button>
+<div class="sboverlay" id="sbOverlay"></div>
+<div class="sidebar" id="sidebar">
+  <div class="sbhead">
+    <h3>シナリオ</h3>
+    <button class="sbclose" id="sbClose" title="閉じる">✕</button>
+  </div>
+  <button class="savebtn" id="saveBtn">＋ 今の設定を保存</button>
+  <div class="pinrow">
+    <span class="pintgl on" id="pinToggle"><span class="sw"></span>ピンをグラフに表示</span>
+  </div>
+  <div class="sptools">
+    <input class="ssearch" id="sSearch" type="text" placeholder="名称で検索">
+    <select class="ssort" id="sSort">
+      <option value="new">新しい順</option>
+      <option value="old">古い順</option>
+      <option value="name">名称順</option>
+      <option value="real">手取り額順</option>
+    </select>
+  </div>
+  <div class="slist" id="slist"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  // テーマ別パレット
+  const THEME={
+    light:{bg:0xe9edf6,fog:0.013,wire:0x0a0c12,plane:0x5b6492,planeOp:0.30,axisInk:0x000000,neutral:0x8b93bd,gain:0x2fae6a,loss:0xe24d4d,point:0x21306e},
+    dark:{bg:0x11142a,fog:0.019,wire:0xeef0ff,plane:0x9aa0c8,planeOp:0.24,axisInk:0xeef0ff,neutral:0x9aa0c8,gain:0x5fdc9b,loss:0xf47171,point:0xf2a03a}
+  };
+  let TH=THEME.light;
+  const UMIN=0.5,UMAX=1.5;          // 為替倍率（線形）
+  const VMIN=0.01,VMAX=100;         // 株価倍率（対数, 1/100〜100倍）
+  const UC=(UMIN+UMAX)/2, UH=(UMAX-UMIN)/2;
+  const L=Math.log10, P10=x=>Math.pow(10,x);
+  const LVMIN=L(VMIN), LVMAX=L(VMAX), LVC=(LVMIN+LVMAX)/2, LVH=(LVMAX-LVMIN)/2;
+  const H=3.4, VY=1.35, N=64;
+  const CGT=0.20315;
+  const POSL=2.1, NEGL=2.3;
+  const FLOOR=0.003;
+
+  const X=u=>(u-UC)/UH*H;
+  const Z=v=>(L(v)-LVC)/LVH*H;
+  const Zinv=z=>P10(LVC + z/H*LVH);
+  const Xinv=x=>UC + x/H*UH;
+  const Ymult=m=>L(Math.max(m,FLOOR))*VY;
+  const Ytheory=(u,v)=>Ymult(u*v);
+
+  // live params
+  let comm=0.0045, spread=0.25, taxed=true;
+  let BFX=150, BPX=100, SHARES=100;
+  let divY=0.02, divYrs=1, divTax=0.283;
+
+  function perShare(u,v){
+    const invested=BPX*(BFX+spread)+comm*BPX*BFX;
+    const proceeds=v*BPX*(u*BFX-spread)-comm*v*BPX*u*BFX;
+    return {invested,proceeds,preTax:proceeds-invested};
+  }
+  function netRatio(u,v){
+    const ps=perShare(u,v);
+    const cgt=(taxed&&ps.preTax>0)?ps.preTax*CGT:0;
+    return (ps.preTax-cgt)/(BFX*BPX);
+  }
+  const Ynet=(u,v)=>Ymult(1+netRatio(u,v));
+  function yenResult(u,v){
+    const ps=perShare(u,v);
+    const preTaxTotal=SHARES*ps.preTax;
+    const cgt=(taxed&&preTaxTotal>0)?preTaxTotal*CGT:0;
+    const tradeReal=preTaxTotal-cgt;
+    const avgFx=BFX*(1+u)/2;
+    const divNet=SHARES*BPX*divY*divYrs*avgFx*(1-divTax);
+    const theory=SHARES*BPX*BFX*(u*v-1);
+    return {theory,tradeReal,divNet,real:tradeReal+divNet,drag:theory-tradeReal};
+  }
+
+  const stage=document.getElementById('stage');
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(TH.bg);
+  scene.fog=new THREE.FogExp2(TH.bg,TH.fog);
+  const camera=new THREE.PerspectiveCamera(48,1,0.1,200);
+  const renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  stage.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff,0.78));
+  const d1=new THREE.DirectionalLight(0xffffff,0.7); d1.position.set(6,14,5); scene.add(d1);
+  const d2=new THREE.DirectionalLight(0xdfe6ff,0.5); d2.position.set(-7,6,-6); scene.add(d2);
+
+  const cGain=new THREE.Color(TH.gain),cLoss=new THREE.Color(TH.loss),cNeut=new THREE.Color(TH.neutral);
+  function netColor(r){
+    const c=new THREE.Color(); const m=1+r;
+    if(r>=0){ const t=Math.min(L(Math.max(m,1))/POSL,1); c.copy(cNeut).lerp(cGain,0.25+0.75*Math.sqrt(t)); }
+    else { const t=Math.min(-L(Math.max(m,FLOOR))/NEGL,1); c.copy(cNeut).lerp(cLoss,0.25+0.75*Math.sqrt(t)); }
+    return c;
+  }
+
+  // ---- take-home surface (dynamic) ----
+  const VN=N+1, COUNT=VN*VN;
+  const posArr=new Float32Array(COUNT*3), colArr=new Float32Array(COUNT*3);
+  const idx=[];
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){const a=i*VN+j,b=a+1,c=a+VN,d=c+1; idx.push(a,c,b,b,c,d);}
+  const aGeo=new THREE.BufferGeometry();
+  aGeo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+  aGeo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+  aGeo.setIndex(idx);
+  const aMesh=new THREE.Mesh(aGeo,new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide,shininess:16,transparent:true,opacity:0.97}));
+  scene.add(aMesh);
+  function gridU(i){ return UMIN+(UMAX-UMIN)*i/N; }
+  function gridV(j){ return P10(LVMIN+(LVMAX-LVMIN)*j/N); } // 対数等間隔
+  function recomputeActual(){
+    let p=0;
+    for(let i=0;i<VN;i++){const u=gridU(i);
+      for(let j=0;j<VN;j++){const v=gridV(j);
+        const r=netRatio(u,v); const c=netColor(r);
+        posArr[p]=X(u); posArr[p+1]=Ymult(1+r); posArr[p+2]=Z(v);
+        colArr[p]=c.r; colArr[p+1]=c.g; colArr[p+2]=c.b; p+=3;
+      }}
+    aGeo.attributes.position.needsUpdate=true; aGeo.attributes.color.needsUpdate=true;
+    aGeo.computeVertexNormals();
+  }
+
+  // ---- theory wireframe (distinct color, static geometry / themeable color) ----
+  const wireMat=new THREE.LineBasicMaterial({color:TH.wire,transparent:true,opacity:0.6});
+  (function(){
+    const segs=[]; const LU=10,LV=14,S=64;
+    for(let i=0;i<=LU;i++){const u=UMIN+(UMAX-UMIN)*i/LU; let pr=null;
+      for(let k=0;k<=S;k++){const v=P10(LVMIN+(LVMAX-LVMIN)*k/S); const cur=[X(u),Ytheory(u,v)+0.006,Z(v)];
+        if(pr)segs.push(...pr,...cur); pr=cur;}}
+    for(let j=0;j<=LV;j++){const v=P10(LVMIN+(LVMAX-LVMIN)*j/LV); let pr=null;
+      for(let k=0;k<=S;k++){const u=UMIN+(UMAX-UMIN)*k/S; const cur=[X(u),Ytheory(u,v)+0.006,Z(v)];
+        if(pr)segs.push(...pr,...cur); pr=cur;}}
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(segs,3));
+    scene.add(new THREE.LineSegments(g,wireMat));
+  })();
+
+  // break-even plane (themeable, more opaque)
+  const planeMat=new THREE.MeshBasicMaterial({color:TH.plane,transparent:true,opacity:TH.planeOp,side:THREE.DoubleSide,depthWrite:false});
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(H*2.2,H*2.2),planeMat);
+  plane.rotation.x=-Math.PI/2; scene.add(plane);
+  // break-even curve uv=1
+  (function(){const pts=[]; for(let k=0;k<=120;k++){const u=UMIN+(UMAX-UMIN)*k/120; const v=1/u; if(v<VMIN||v>VMAX)continue; pts.push(X(u),0.015,Z(v));}
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+    scene.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0x6a72a0,transparent:true,opacity:0.75})));})();
+
+  const axMat=new THREE.LineBasicMaterial({color:TH.axisInk,transparent:true,opacity:0.72});
+  function axisLine(a,b){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute([...a,...b],3));return new THREE.Line(g,axMat);}
+  scene.add(axisLine([X(UMIN),0,Z(VMIN)],[X(UMAX),0,Z(VMIN)]));
+  scene.add(axisLine([X(UMIN),0,Z(VMIN)],[X(UMIN),0,Z(VMAX)]));
+  // 縦の損益軸（平面の上下に伸ばす → 下から見ても向きが分かる）
+  const vcx=X(UMIN), vcz=Z(VMIN);
+  (function(){const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute([vcx,Ymult(0.005),vcz, vcx,Ymult(160),vcz],3));
+    scene.add(new THREE.Line(g,axMat));})();
+
+  function label(text,color,size){
+    const cv=document.createElement('canvas'); const ctx=cv.getContext('2d');
+    const font='bold 48px "Zen Kaku Gothic New",sans-serif'; ctx.font=font;
+    const w=Math.ceil(ctx.measureText(text).width)+24, h=72;
+    cv.width=w; cv.height=h; ctx.font=font; ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(text,w/2,h/2);
+    const tex=new THREE.CanvasTexture(cv); tex.anisotropy=4;
+    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+    sp.scale.set(size*(w/h), size, 1); return sp;
+  }
+  const labelSpecs=[
+    {t:'為替倍率 →',x:X(UMAX)+0.5,y:0.12,z:Z(VMIN)-0.2,s:0.5},
+    {t:'株価倍率 →',x:X(UMIN)-0.2,y:0.12,z:Z(VMAX)+0.5,s:0.5},
+    {t:'損益±0',x:X(UMIN)-0.9,y:0.05,z:Z(VMIN)-0.2,s:0.38},
+    {t:'損益倍率',x:vcx-0.18,y:Ymult(160)+0.22,z:vcz,s:0.38}
+  ];
+  [0.1,1,10,100].forEach(t=>{ if(t>=VMIN&&t<=VMAX) labelSpecs.push({t:t+'×',x:X(UMIN)-0.5,y:0.02,z:Z(t),s:0.28}); });
+  [0.1,1,10,100].forEach(t=>{ labelSpecs.push({t:t+'×',x:vcx-0.5,y:Ymult(t),z:vcz-0.08,s:0.28}); });
+  // 為替倍率(横)の目盛り
+  [0.5,1,1.5].forEach(t=>{ labelSpecs.push({t:t+'×',x:X(t),y:0.02,z:Z(VMIN)-0.45,s:0.28}); });
+  const labelGroup=new THREE.Group(); scene.add(labelGroup);
+  function buildLabels(colorHex){
+    const col='#'+colorHex.toString(16).padStart(6,'0');
+    while(labelGroup.children.length){ const c=labelGroup.children.pop(); if(c.material){ if(c.material.map)c.material.map.dispose(); c.material.dispose(); } labelGroup.remove(c); }
+    labelSpecs.forEach(sp=>{ const l=label(sp.t,col,sp.s); l.position.set(sp.x,sp.y,sp.z); labelGroup.add(l); });
+  }
+  buildLabels(TH.axisInk);
+
+  // marker (smaller)
+  const marker=new THREE.Mesh(new THREE.SphereGeometry(0.085,24,24),
+    new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xffffff,emissiveIntensity:0.4,roughness:0.3}));
+  scene.add(marker);
+  const ringMat=new THREE.MeshBasicMaterial({color:TH.wire,transparent:true,opacity:0.9,side:THREE.DoubleSide});
+  const ring=new THREE.Mesh(new THREE.RingGeometry(0.10,0.135,28),ringMat);
+  scene.add(ring);
+  const gapMat=new THREE.LineDashedMaterial({color:TH.wire,transparent:true,opacity:0.7,dashSize:0.1,gapSize:0.07});
+  const gapGeo=new THREE.BufferGeometry(); gapGeo.setAttribute('position',new THREE.Float32BufferAttribute(new Array(6).fill(0),3));
+  const gapLine=new THREE.Line(gapGeo,gapMat); scene.add(gapLine);
+  const stemMat=new THREE.LineBasicMaterial({color:0x6a72a0,transparent:true,opacity:0.5});
+  const stemGeo=new THREE.BufferGeometry(); stemGeo.setAttribute('position',new THREE.Float32BufferAttribute(new Array(6).fill(0),3));
+  const stem=new THREE.Line(stemGeo,stemMat); scene.add(stem);
+
+  // ---- camera / navigation (rotate + pan + zoom-to-cursor) ----
+  const target=new THREE.Vector3(0,0.5,0);
+  let radius=13.5,theta=0.92,phi=1.02,autorot=true;
+  let camTween=null;
+  function focusTo(pos,rad){ camTween={fT:target.clone(),tT:pos.clone(),fR:radius,tR:rad,t0:performance.now(),dur:650}; autorot=false; }
+  const _dir=new THREE.Vector3(),_right=new THREE.Vector3(),_up=new THREE.Vector3();
+  function applyCam(){
+    phi=Math.max(0.12,Math.min(2.98,phi)); radius=Math.max(3,Math.min(48,radius));
+    camera.position.set(target.x+radius*Math.sin(phi)*Math.cos(theta),target.y+radius*Math.cos(phi),target.z+radius*Math.sin(phi)*Math.sin(theta));
+    camera.lookAt(target);
+  }
+  const ray=new THREE.Raycaster();
+  function ndc(e){ return new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1); }
+  function hit(e){ ray.setFromCamera(ndc(e),camera); const h=ray.intersectObjects([aMesh,plane],false); return h.length?h[0].point:null; }
+  function panBy(dx,dy){
+    camera.getWorldDirection(_dir); _right.crossVectors(_dir,camera.up).normalize(); _up.crossVectors(_right,_dir).normalize();
+    const wpp=2*Math.tan(camera.fov*Math.PI/360)*radius/innerHeight;
+    target.add(_right.multiplyScalar(-dx*wpp)).add(_up.multiplyScalar(dy*wpp)); applyCam();
+  }
+  const el=renderer.domElement; const ptrs=new Map(); let lastPinch=0,lastMid=null; let downInfo=null;
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+  el.addEventListener('pointerdown',e=>{
+    el.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY,btn:e.button}); autorot=false; hideTip();
+    downInfo = (ptrs.size===1) ? {x:e.clientX,y:e.clientY,t:performance.now(),pan:(e.shiftKey||e.button===2)} : null;
+  });
+  el.addEventListener('pointermove',e=>{
+    if(ptrs.size===0){ hover(e); return; }
+    if(!ptrs.has(e.pointerId))return; const p=ptrs.get(e.pointerId);
+    const dx=e.clientX-p.x,dy=e.clientY-p.y; p.x=e.clientX;p.y=e.clientY;
+    if(ptrs.size===1){
+      const pan = e.shiftKey || p.btn===2 || (e.buttons&2);
+      if(pan) panBy(dx,dy); else { theta-=dx*0.006; phi-=dy*0.006; applyCam(); }
+    } else if(ptrs.size===2){
+      const a=[...ptrs.values()]; const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+      const mid={x:(a[0].x+a[1].x)/2,y:(a[0].y+a[1].y)/2};
+      if(lastPinch) radius*=1-(d-lastPinch)*0.005;
+      if(lastMid) panBy(mid.x-lastMid.x, mid.y-lastMid.y);
+      lastPinch=d; lastMid=mid; applyCam();
+    }
+  });
+  function endP(e){
+    // タップ＝点選択
+    if(downInfo && ptrs.size===1){
+      const mv=Math.hypot(e.clientX-downInfo.x,e.clientY-downInfo.y), dt=performance.now()-downInfo.t;
+      if(!downInfo.pan && mv<6 && dt<350) clickSelect(e);
+    }
+    ptrs.delete(e.pointerId); if(ptrs.size<2){lastPinch=0;lastMid=null;} downInfo=null;
+  }
+  el.addEventListener('pointerup',endP); el.addEventListener('pointercancel',endP);
+  el.addEventListener('wheel',e=>{
+    e.preventDefault(); autorot=false; hideTip();
+    const f=Math.pow(1.0014,e.deltaY);
+    const P=hit(e); const newR=Math.max(3,Math.min(48,radius*f));
+    if(P){ target.lerp(P, newR<radius?0.22:0.10); }
+    radius=newR; applyCam();
+  },{passive:false});
+
+  function flashReadbar(){ const rb=document.querySelector('.readbar'); rb.classList.remove('flash'); void rb.offsetWidth; rb.classList.add('flash'); }
+  function clickSelect(e){
+    ray.setFromCamera(ndc(e),camera);
+    // 保存ピンを優先（表示中）→ クリックで呼び出し
+    if(pinsVisible && pinGroup.children.length){
+      const hp=ray.intersectObjects(pinGroup.children,false);
+      if(hp.length){ restore(hp[0].object.userData.scen); hideTip(); flashReadbar(); return; }
+    }
+    const h=ray.intersectObject(aMesh,false); if(!h.length) return;
+    let u=Xinv(h[0].point.x), v=Zinv(h[0].point.z);
+    u=Math.max(UMIN,Math.min(UMAX,u)); v=Math.max(VMIN,Math.min(VMAX,v));
+    sx.value=u; sy.value=v; updateMarker(); hideTip();
+    flashReadbar();
+  }
+
+  // ---- hover tooltip ----
+  const tip=document.getElementById('tip');
+  function hideTip(){ tip.style.display='none'; }
+  function hover(e){
+    ray.setFromCamera(ndc(e),camera);
+    // 保存ピンを優先（表示中のみ）
+    if(pinsVisible && pinGroup.children.length){
+      const hp=ray.intersectObjects(pinGroup.children,false);
+      if(hp.length){
+        const s=hp[0].object.userData.scen;
+        tip.innerHTML='<b style="color:'+(s.color||'#fff')+'">'+(s.name||'シナリオ')+'</b><br>'
+          +'<span class="tk">為替</span> <b class="tx">'+s.u.toFixed(2)+'×</b>　<span class="tk">株価</span> <b class="ty">'+s.v.toFixed(2)+'×</b><br>'
+          +'<span class="tk">買</span> <b>'+(+s.bfx).toFixed(0)+'円 / $'+(+s.bpx).toFixed(0)+'</b>　<b>'+s.n+'株</b>'+(s.taxed?'':' <b>NISA</b>')+'<br>'
+          +'<span class="tk">手取り</span> <b>'+yenS(yenRealPure(s))+'</b>';
+        tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px'; tip.style.display='block';
+        return;
+      }
+    }
+    const h=ray.intersectObject(aMesh,false);
+    if(!h.length){ hideTip(); return; }
+    const pt=h[0].point;
+    let u=Xinv(pt.x), v=Zinv(pt.z);
+    u=Math.max(UMIN,Math.min(UMAX,u)); v=Math.max(VMIN,Math.min(VMAX,v));
+    const yr=yenResult(u,v); const r=netRatio(u,v);
+    tip.innerHTML='<span class="tk">為替</span> <b class="tx">'+u.toFixed(2)+'×</b>　<span class="tk">株価</span> <b class="ty">'+v.toFixed(2)+'×</b><br>'
+      +'<span class="tk">損益倍率</span> <b>'+(u*v).toFixed(2)+'×</b>　<span class="tk">手取り率</span> <b>'+(r>=0?'+':'')+(r*100).toFixed(0)+'%</b><br>'
+      +'<span class="tk">手取り</span> <b>'+yenS(yr.real)+'</b>　<span class="tk">理論</span> <b>'+yenS(yr.theory)+'</b>';
+    tip.style.left=e.clientX+'px'; tip.style.top=e.clientY+'px'; tip.style.display='block';
+  }
+
+  // ---- formatting & readouts ----
+  const sx=document.getElementById('sx'),sy=document.getElementById('sy'),sc=document.getElementById('sc'),ss=document.getElementById('ss');
+  const sbf=document.getElementById('sbf'),sbp=document.getElementById('sbp'),sn=document.getElementById('sn');
+  const sdy=document.getElementById('sdy'),sdyr=document.getElementById('sdyr'),sdt=document.getElementById('sdt');
+  const fmt=n=>n.toFixed(2)+'×';
+  const yenS=n=>(n<0?'−':'+')+Math.round(Math.abs(n)).toLocaleString('ja-JP')+'円';
+  const yenN=n=>Math.round(n).toLocaleString('ja-JP');
+  const usd=n=>'$'+(Number.isInteger(n)?n:(+n.toFixed(2)));
+  function setRO(id,val){const e=document.getElementById(id); if(e&&document.activeElement!==e) e.value=val;}
+
+  function updateMarker(){
+    const u=+sx.value,v=+sy.value;
+    const wx=X(u),wz=Z(v),ya=Ynet(u,v),yt=Ytheory(u,v);
+    marker.position.set(wx,ya,wz);
+    ring.position.set(wx,yt,wz); ring.lookAt(camera.position);
+    gapLine.geometry.setAttribute('position',new THREE.Float32BufferAttribute([wx,ya,wz,wx,yt,wz],3));
+    gapLine.geometry.attributes.position.needsUpdate=true; gapLine.computeLineDistances();
+    stem.geometry.setAttribute('position',new THREE.Float32BufferAttribute([wx,Math.min(0,ya),wz,wx,Math.max(0,ya),wz],3));
+    stem.geometry.attributes.position.needsUpdate=true;
+    const r=netRatio(u,v);
+    const c=new THREE.Color(TH.point);
+    marker.material.emissive.copy(c); marker.material.emissiveIntensity=0.35; marker.material.color.copy(c);
+
+    setRO('sx-in',u.toFixed(2)); setRO('sy-in',v.toFixed(2));
+    document.getElementById('rx').textContent=fmt(u);
+    document.getElementById('ry').textContent=fmt(v);
+    const sellFx=BFX*u, sellPx=BPX*v;
+    document.getElementById('rxcap').textContent=(+BFX.toFixed(2))+'円 → '+yenN(sellFx)+'円';
+    document.getElementById('rycap').textContent=usd(+BPX.toFixed(2))+' → '+usd(sellPx);
+    document.getElementById('sxcap').innerHTML='売値の為替 <b>'+yenN(sellFx)+'円</b>';
+    document.getElementById('sycap').innerHTML='売値の株価 <b>'+usd(sellPx)+'</b>';
+    const rm=document.getElementById('rmult'); rm.textContent=fmt(u*v);
+    rm.className='v '+(u*v>1.0005?'up':(u*v<0.9995?'down':'flat'));
+
+    const yr=yenResult(u,v);
+    const ry=document.getElementById('ryen'); ry.textContent=yenS(yr.real);
+    ry.className='v '+(yr.real>0.5?'up':(yr.real<-0.5?'down':'flat'));
+    document.getElementById('rtheory').textContent=yenS(yr.theory);
+    const netPct=r*100;
+    document.getElementById('rsub').textContent='売買 '+yenS(yr.tradeReal)+' ＋配当 '+yenS(yr.divNet)+'／税手数料 −'+yenN(yr.drag)+'（手取り率 '+(netPct>=0?'+':'')+netPct.toFixed(0)+'%）';
+  }
+  function refreshReadCost(){
+    setRO('sc-in',(+sc.value).toFixed(2)); setRO('ss-in',(+ss.value).toFixed(2));
+    setRO('sbf-in',(+sbf.value).toFixed(2)); setRO('sbp-in',(+sbp.value).toFixed(2));
+    setRO('sn-in',(+sn.value).toFixed(0));
+    setRO('sdy-in',(+sdy.value).toFixed(1)); setRO('sdyr-in',(+sdyr.value).toFixed(0)); setRO('sdt-in',(+sdt.value).toFixed(1));
+  }
+  function onSurfaceParam(){ comm=+sc.value/100; spread=+ss.value; BFX=+sbf.value; refreshReadCost(); recomputeActual(); updateMarker(); }
+  function onYenOnly(){ BPX=+sbp.value; SHARES=+sn.value; divY=+sdy.value/100; divYrs=+sdyr.value; divTax=+sdt.value/100; refreshReadCost(); updateMarker(); }
+
+  function bindNum(id,dec,onChange){
+    const s=document.getElementById(id), inp=document.getElementById(id+'-in');
+    s.addEventListener('input',()=>{ if(document.activeElement!==inp) inp.value=(+s.value).toFixed(dec); onChange(); });
+    inp.addEventListener('input',()=>{ const raw=inp.value.trim(); if(raw==='')return; let val=parseFloat(raw); if(isNaN(val))return; val=Math.max(+s.min,Math.min(+s.max,val)); s.value=val; onChange(); });
+    inp.addEventListener('change',()=>{ let val=parseFloat(inp.value); if(isNaN(val))val=+s.value; val=Math.max(+s.min,Math.min(+s.max,val)); s.value=val; inp.value=val.toFixed(dec); onChange(); });
+  }
+  bindNum('sx',2,updateMarker); bindNum('sy',2,updateMarker);
+  bindNum('sbf',2,onSurfaceParam); bindNum('sc',2,onSurfaceParam); bindNum('ss',2,onSurfaceParam);
+  bindNum('sbp',2,onYenOnly); bindNum('sn',0,onYenOnly);
+  bindNum('sdy',1,onYenOnly); bindNum('sdyr',0,onYenOnly); bindNum('sdt',1,onYenOnly);
+
+  document.querySelectorAll('#tax button').forEach(b=>b.addEventListener('click',()=>{
+    taxed=b.dataset.v==='1';
+    document.querySelectorAll('#tax button').forEach(x=>x.classList.toggle('on',x===b));
+    recomputeActual(); updateMarker();
+  }));
+  function applyTheme(name){
+    TH=THEME[name]||THEME.light;
+    document.documentElement.setAttribute('data-theme',name);
+    scene.background.set(TH.bg); scene.fog.color.set(TH.bg); scene.fog.density=TH.fog;
+    wireMat.color.set(TH.wire); ringMat.color.set(TH.wire); gapMat.color.set(TH.wire);
+    planeMat.color.set(TH.plane); planeMat.opacity=TH.planeOp;
+    axMat.color.set(TH.axisInk); buildLabels(TH.axisInk);
+    cNeut.set(TH.neutral); cGain.set(TH.gain); cLoss.set(TH.loss);
+    recomputeActual(); updateMarker(); renderPins();
+  }
+  let curTheme='light';
+  const themeBtn=document.getElementById('themeBtn');
+  themeBtn.addEventListener('click',()=>{ curTheme=curTheme==='light'?'dark':'light'; applyTheme(curTheme); themeBtn.textContent=curTheme==='light'?'☀':'☾'; });
+  document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>{
+    const [u,v]=b.dataset.p.split(','); sx.value=u; sy.value=v; updateMarker();
+  }));
+
+  // ===== シナリオ保存 =====
+  const pinGroup=new THREE.Group(); scene.add(pinGroup);
+  const PALETTE=['#e0524f','#2fae6a','#3a86ff','#f2a03a','#9b5de5','#06b6d4','#ec4899','#84cc16'];
+  let seq=0;
+  function netRatioPure(s){
+    const u=s.u,v=s.v,BFXs=s.bfx,sp=s.spread,cm=s.comm/100,tx=s.taxed;
+    const inv=(BFXs+sp)+cm*BFXs;
+    const pro=v*(u*BFXs-sp)-cm*v*u*BFXs;
+    let pre=pro-inv; const cgt=(tx&&pre>0)?pre*CGT:0; return (pre-cgt)/BFXs;
+  }
+  function yenRealPure(s){
+    const u=s.u,v=s.v,B=s.bfx,BP=s.bpx,SH=s.n,cm=s.comm/100,sp=s.spread,tx=s.taxed,dy=s.dy/100,dyr=s.dyr,dt=s.dt/100;
+    const inv=BP*(B+sp)+cm*BP*B, pro=v*BP*(u*B-sp)-cm*v*BP*u*B;
+    const preT=SH*(pro-inv), cgt=(tx&&preT>0)?preT*CGT:0;
+    const avg=B*(1+u)/2, div=SH*BP*dy*dyr*avg*(1-dt);
+    return preT-cgt+div;
+  }
+  const yenComp=n=>{const a=Math.abs(n),s=n<0?'−':'+'; return a>=10000? s+(a/10000).toFixed(1)+'万円' : s+Math.round(a).toLocaleString('ja-JP')+'円';};
+  function snapshot(){
+    return {id:Date.now().toString(36)+'_'+(seq++), ts:Date.now(),
+      name:'シナリオ '+(scenarios.length+1), color:PALETTE[scenarios.length%PALETTE.length], visible:true,
+      u:+sx.value,v:+sy.value,bfx:+sbf.value,bpx:+sbp.value,n:+sn.value,comm:+sc.value,spread:+ss.value,taxed:taxed,dy:+sdy.value,dyr:+sdyr.value,dt:+sdt.value};
+  }
+  function restore(s){
+    sx.value=s.u; sy.value=s.v; sbf.value=s.bfx; sbp.value=s.bpx; sn.value=s.n;
+    sc.value=s.comm; ss.value=s.spread; sdy.value=s.dy; sdyr.value=s.dyr; sdt.value=s.dt;
+    taxed=s.taxed; document.querySelectorAll('#tax button').forEach(x=>x.classList.toggle('on',(x.dataset.v==='1')===taxed));
+    onSurfaceParam(); onYenOnly();
+  }
+  const SKEY='gaikabu_scenarios_v1';
+  function loadStore(){ try{ const a=JSON.parse(localStorage.getItem(SKEY))||[];
+    return a.map((s,i)=>Object.assign({id:'old'+i+'_'+(seq++),ts:Date.now()+i,name:'シナリオ '+(i+1),color:PALETTE[i%PALETTE.length],visible:true},s)); }catch(e){ return []; } }
+  function saveStore(){ try{ localStorage.setItem(SKEY,JSON.stringify(scenarios)); }catch(e){} }
+  let scenarios=loadStore();
+  const byId=id=>scenarios.findIndex(s=>s.id===id);
+  function updCount(){ document.getElementById('spCount').textContent=scenarios.length; }
+  let pinsVisible=true;
+
+  function renderPins(){
+    while(pinGroup.children.length){ const c=pinGroup.children.pop(); c.geometry&&c.geometry.dispose(); c.material&&c.material.dispose(); pinGroup.remove(c); }
+    scenarios.forEach(s=>{ if(s.visible===false) return; const col=new THREE.Color(s.color||TH.point);
+      const m=new THREE.Mesh(new THREE.SphereGeometry(0.075,16,16),
+        new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.4,roughness:0.4}));
+      m.position.set(X(s.u),Ymult(1+netRatioPure(s)),Z(s.v)); m.userData.scen=s; pinGroup.add(m);
+    });
+    pinGroup.visible=pinsVisible;
+  }
+  function focusPin(s){ const pos=new THREE.Vector3(X(s.u),Ymult(1+netRatioPure(s)),Z(s.v)); closeSidebar(); focusTo(pos,6.5); }
+  function renderList(){
+    const box=document.getElementById('slist'); box.innerHTML='';
+    updCount();
+    let arr=scenarios.slice();
+    const q=document.getElementById('sSearch').value.trim();
+    if(q) arr=arr.filter(s=>(s.name||'').includes(q));
+    const sortBy=document.getElementById('sSort').value;
+    if(sortBy==='new') arr.sort((a,b)=>b.ts-a.ts);
+    else if(sortBy==='old') arr.sort((a,b)=>a.ts-b.ts);
+    else if(sortBy==='name') arr.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ja'));
+    else if(sortBy==='real') arr.sort((a,b)=>yenRealPure(b)-yenRealPure(a));
+    if(!arr.length){ box.innerHTML='<div class="sempty">'+(scenarios.length? '該当なし':'保存はまだありません')+'</div>'; return; }
+    arr.forEach(s=>{
+      const row=document.createElement('div'); row.className='sitem';
+      const clr=document.createElement('input'); clr.type='color'; clr.className='sclr'; clr.value=s.color||'#3a86ff'; clr.title='色を変更';
+      clr.addEventListener('input',()=>{ const i=byId(s.id); if(i>=0){scenarios[i].color=clr.value; saveStore(); renderPins();} });
+      const mid=document.createElement('div'); mid.className='smid';
+      const name=document.createElement('input'); name.className='sname'; name.value=s.name||''; name.title='名称を編集';
+      name.addEventListener('input',()=>{ const i=byId(s.id); if(i>=0){scenarios[i].name=name.value; saveStore();} });
+      const sum=document.createElement('div'); sum.className='ssum';
+      sum.innerHTML='為替'+s.u.toFixed(2)+'× 株'+s.v.toFixed(2)+'×<br>買'+(+s.bfx).toFixed(0)+'円 $'+(+s.bpx).toFixed(0)+' '+s.n+'株'+(s.taxed?'':' NISA')+'<br>手取り '+yenComp(yenRealPure(s));
+      sum.title='クリックで呼び出し'; sum.addEventListener('click',()=>restore(s));
+      mid.appendChild(name); mid.appendChild(sum);
+      const rec=document.createElement('button'); rec.className='srecall'; rec.textContent='呼出'; rec.addEventListener('click',()=>restore(s));
+      const foc=document.createElement('button'); foc.className='srecall sfoc'; foc.textContent='視点'; foc.title='この地点に視点を移動'; foc.addEventListener('click',()=>focusPin(s));
+      const vis=document.createElement('button'); vis.className='svis'+(s.visible===false?' off':''); vis.textContent=s.visible===false?'🚫 非表示':'👁 表示'; vis.title='グラフ上のピン表示を切替';
+      vis.addEventListener('click',()=>{ const i=byId(s.id); if(i<0)return; scenarios[i].visible=!(scenarios[i].visible!==false); s.visible=scenarios[i].visible; saveStore(); renderPins(); vis.classList.toggle('off',s.visible===false); vis.textContent=s.visible===false?'🚫 非表示':'👁 表示'; });
+      const del=document.createElement('button'); del.className='sdel'; del.textContent='✕'; del.title='削除';
+      del.addEventListener('click',()=>{ const i=byId(s.id); if(i>=0){scenarios.splice(i,1); saveStore(); renderList(); renderPins();} });
+      const btns=document.createElement('div'); btns.className='sbtns'; btns.appendChild(rec); btns.appendChild(foc); btns.appendChild(vis);
+      row.appendChild(clr); row.appendChild(mid); row.appendChild(btns); row.appendChild(del); box.appendChild(row);
+    });
+  }
+  document.getElementById('saveBtn').addEventListener('click',()=>{
+    scenarios.push(snapshot()); if(scenarios.length>40) scenarios.shift();
+    saveStore(); renderList(); renderPins();
+    openSidebar();
+  });
+  document.getElementById('sSearch').addEventListener('input',renderList);
+  document.getElementById('sSort').addEventListener('change',renderList);
+  const sidebar=document.getElementById('sidebar'), sbOverlay=document.getElementById('sbOverlay');
+  function openSidebar(){ sidebar.classList.add('open'); sbOverlay.classList.add('open'); document.getElementById('scenBtn').style.display='none'; document.getElementById('themeBtn').style.display='none'; }
+  function closeSidebar(){ sidebar.classList.remove('open'); sbOverlay.classList.remove('open'); document.getElementById('scenBtn').style.display='flex'; document.getElementById('themeBtn').style.display='flex'; }
+  document.getElementById('scenBtn').addEventListener('click',()=>{ sidebar.classList.contains('open')?closeSidebar():openSidebar(); });
+  document.getElementById('sbClose').addEventListener('click',closeSidebar);
+  sbOverlay.addEventListener('click',closeSidebar);
+  // ピン表示ON/OFF
+  const pinToggle=document.getElementById('pinToggle');
+  pinToggle.addEventListener('click',()=>{ pinsVisible=!pinsVisible; pinToggle.classList.toggle('on',pinsVisible); pinGroup.visible=pinsVisible; });
+
+  function resize(){
+    const w=innerWidth,h=innerHeight; renderer.setSize(w,h); camera.aspect=w/h;
+    target.x = (w>=860)? -2.6 : 0;     // PCはグラフを右へ寄せて左パネルと被らせない
+    camera.updateProjectionMatrix(); applyCam();
+  }
+  window.addEventListener('resize',resize); resize();
+  document.documentElement.setAttribute('data-theme','light');
+  refreshReadCost(); recomputeActual(); updateMarker(); renderList(); renderPins();
+  (function loop(){ requestAnimationFrame(loop);
+    if(camTween){ const p=Math.min((performance.now()-camTween.t0)/camTween.dur,1); const e=p<0.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+      target.lerpVectors(camTween.fT,camTween.tT,e); radius=camTween.fR+(camTween.tR-camTween.fR)*e; applyCam(); if(p>=1)camTween=null; }
+    else if(autorot){theta+=0.0020;applyCam();}
+    ring.lookAt(camera.position); renderer.render(scene,camera); })();
+})();
+</script>
+<script>
+  // 損益パネルの折りたたみ（スマホ）
+  (function(){
+    const rb=document.getElementById('readbar'), tg=document.getElementById('rbToggle');
+    const isMobile=()=>window.matchMedia('(max-width:760px)').matches;
+    if(isMobile()) rb.classList.add('mini');
+    function toggle(e){ if(!isMobile())return; rb.classList.toggle('mini'); if(e)e.stopPropagation(); }
+    rb.addEventListener('click',toggle);
+  })();
+  // PWA: サービスワーカー登録
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+  }
+</script>
+</body>
+</html>
